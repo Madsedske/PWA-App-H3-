@@ -1,0 +1,159 @@
+﻿@page "/picture"
+@using System.Text.Json;
+@inject HttpClient Http
+@inject IJSRuntime ijsRuntime
+@inject ILocalStorageService localStorage
+
+<PageTitle>Picture Upload</PageTitle>
+
+<h1>Upload</h1>
+<br />
+<MatButton class="btn-primary" OnClick="@DeleteLocalStorage">DELETE LIST</MatButton>
+<br />
+<p>Please upload your beautiful picture here.</p>
+<br />
+
+<div id="" class="col-12">
+    <div class="row">
+        <div class="col-4">
+            <InputFile OnChange="OnFileChange" />
+            <br />
+        </div>        
+    </div>
+    <div class="row">
+        <div class="col-4">
+            @if (ImageData != null)
+            {
+                <br />
+                <button onclick="@OpenDialog" class="btn btn-primary">Choose it</button>
+            }
+        </div>
+    </div>
+</div>
+<br />
+
+@* My dialog for showing the data for the chosen picture *@
+<MatDialog @bind-IsOpen="@dialogIsOpen">
+    <MatDialogTitle>Here is the picture</MatDialogTitle>
+    <MatDialogContent>
+        <img id="ShowImage" src="@ImageData" style="width: auto; height: auto;" />
+        <br />
+        <label>Name: @ImageName</label>
+        <br />
+        <label>Size: @ImageSize</label>
+        <br />
+        <label>Type: @ImageType</label>
+        <br />
+        <MatTextField @bind-Value="@NamePlaceholder" placeholder="Change the image name?"></MatTextField>@* Can change the name *@
+    </MatDialogContent>
+    <MatDialogActions>
+        <MatButton OnClick="@(e => { dialogIsOpen = false; })">No Thanks</MatButton>
+        <MatButton OnClick="SaveToList">Add Picture</MatButton>
+    </MatDialogActions>
+</MatDialog>
+
+
+@* Table to show all the pictures that have been uploaded *@
+<MatTable Items="@pictureslist" class="mat-elevation-z5" Style="width:auto;" ShowPaging="false">
+    <MatTableHeader>
+        <th>Image</th>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Size</th>
+    </MatTableHeader>
+    <MatTableRow>
+        <td><img src=" @context.ImageUrl" style="width: 75px; height: 75px;" /></td>
+        <td>@context.PictureName</td>
+        <td>@context.PictureFileType</td>
+        <td>@context.PictureSize kb</td>
+    </MatTableRow>
+</MatTable>
+
+
+@code {
+    bool dialogIsOpen = false;
+
+    // Function to set the bool for the dialog, to control if its open or not
+    void OpenDialog()
+    {
+        dialogIsOpen = true;
+    }
+
+    // Placeholders
+    public string ImageData { get; set; }
+    public string ImageType { get; set; }
+    public long ImageSize { get; set; }
+    public string NamePlaceholder { get; set; }
+    public string ImageName { get; set; }
+
+    // Handler for the chosen picture and controlling the pictures data
+    private async Task OnFileChange(InputFileChangeEventArgs inputFileChangeEvent)
+    {
+        var image = inputFileChangeEvent.File;
+        ImageName = image.Name;
+        ImageType = image.ContentType;
+        ImageSize = image.Size / 1024;
+        
+        // Setting the base64string to show the picture
+        var resizedImage = await image.RequestImageFileAsync(ImageType, 200, 200);
+        var buffer = new byte[resizedImage.Size];
+        await resizedImage.OpenReadStream().ReadAsync(buffer);
+        ImageData = $"data:{ImageType};base64,{Convert.ToBase64String(buffer)}";
+        StateHasChanged();
+    }
+
+    // Function for saving the pictures data to a list.
+    private async void SaveToList()
+    {
+        dialogIsOpen = false;
+        var pic = new Pictures();
+        pic.ImageUrl = ImageData;
+
+        // Checking if the user has chosen a new name for the picture.
+        if (NamePlaceholder == null)
+            pic.PictureName = ImageName;        
+        else
+            pic.PictureName = NamePlaceholder;
+
+        pic.PictureFileType = ImageType;
+        pic.PictureSize = Convert.ToString(ImageSize);
+        pictureslist.Add(pic);
+
+        // Local storage save.
+        await ijsRuntime.InvokeVoidAsync("localStorage.setItem", "Liste", JsonSerializer.Serialize(pictureslist));
+        StateHasChanged();
+    }
+
+    // When the program starts, the local storage is being loaded.
+    async protected override void OnInitialized()
+    {
+        base.OnInitialized();
+
+        pictureslist = JsonSerializer.Deserialize<List<Pictures>>(await ijsRuntime.InvokeAsync<string>("localStorage.getItem", "Liste")) ?? new();
+        StateHasChanged();
+    }
+
+    // Delete the local storage
+    private async void DeleteLocalStorage()
+    {
+        await localStorage.ClearAsync();
+        StateHasChanged();
+    }
+
+
+    // Class for the pictures data
+    Pictures pict;
+    
+    public List<Pictures> pictureslist = new List<Pictures>();
+
+    public class Pictures
+    {
+        public string ImageUrl { get; set; }
+
+        public string PictureName { get; set; }
+
+        public string PictureFileType { get; set; }
+
+        public string PictureSize { get; set; }
+    }
+}
